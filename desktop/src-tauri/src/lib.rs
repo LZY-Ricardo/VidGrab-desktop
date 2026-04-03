@@ -328,6 +328,7 @@ fn stop_resolver(app: AppHandle, state: State<ResolverState>) -> Result<Resolver
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_http::init())
         .manage(ResolverState::default())
         .invoke_handler(tauri::generate_handler![
             resolver_status,

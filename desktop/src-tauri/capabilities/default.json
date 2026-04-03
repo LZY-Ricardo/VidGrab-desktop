@@ -3,5 +3,14 @@
   "identifier": "default",
   "description": "Default capability for desktop shell",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.vidgrab.sunandyu.top" },
+        { "url": "https://api.vidgrab.sunandyu.top/api/**" }
+      ]
+    }
+  ]
 }

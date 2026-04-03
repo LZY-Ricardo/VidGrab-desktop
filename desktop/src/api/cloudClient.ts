@@ -10,6 +10,12 @@ import type {
   VideoChatResponse,
 } from '@/types'
 
+declare global {
+  interface Window {
+    __TAURI__?: unknown
+  }
+}
+
 const cloudApiBase =
   (import.meta.env.VITE_CLOUD_API_BASE_URL as string | undefined)?.trim() ||
   'https://api.vidgrab.sunandyu.top/api'
@@ -28,6 +34,15 @@ export function setAccessToken(token: string | null) {
   window.localStorage.removeItem(ACCESS_TOKEN_KEY)
 }
 
+async function resolveFetch() {
+  if (!window.__TAURI__) {
+    return window.fetch.bind(window)
+  }
+
+  const module = await import('@tauri-apps/plugin-http')
+  return module.fetch
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAccessToken()
   const headers = new Headers(init?.headers || {})
@@ -36,7 +51,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const response = await fetch(`${cloudApiBase}${path}`, {
+  const tauriFetch = await resolveFetch()
+  const response = await tauriFetch(`${cloudApiBase}${path}`, {
     ...init,
     headers,
   })
