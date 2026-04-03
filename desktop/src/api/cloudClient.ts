@@ -1,6 +1,7 @@
 import type {
   AnalyzeRequest,
   CurrentUserResponse,
+  LocalAnalyzeRequest,
   LoginRequest,
   LoginResponse,
   MembershipStatus,
@@ -121,6 +122,12 @@ export const cloudClient = {
   },
   analyzeVideo(payload: AnalyzeRequest) {
     return request<VideoAnalysisResponse>('/ai/analyze', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  analyzePreparedVideo(payload: LocalAnalyzeRequest) {
+    return request<VideoAnalysisResponse>('/ai/analyze/local', {
       method: 'POST',
       body: JSON.stringify(payload),
     })

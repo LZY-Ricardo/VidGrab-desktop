@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 
 import { cloudClient } from '@/api/cloudClient'
+import { localResolverClient } from '@/api/localResolverClient'
 import type { ChatCitation, VideoAnalysisResponse } from '@/types'
 
 export type TranscriptFormat = 'srt' | 'vtt' | 'txt'
@@ -32,7 +33,13 @@ export function useVideoAI() {
     chatHistory.value = []
 
     try {
-      analysisResult.value = await cloudClient.analyzeVideo({ url: url.trim() })
+      const prepared = await localResolverClient.prepareAIAnalyze({ url: url.trim() })
+      analysisResult.value = await cloudClient.analyzePreparedVideo({
+        source_url: prepared.source_url,
+        video_title: prepared.video_title,
+        transcript: prepared.transcript,
+        transcript_language: prepared.transcript_language,
+      })
     } catch (requestError) {
       analysisError.value = requestError instanceof Error ? requestError.message : 'AI 分析失败'
     } finally {

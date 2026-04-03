@@ -1,4 +1,10 @@
-import type { DownloadRequest, DownloadResponse, TaskStatus, VideoInfo } from '@shared/contracts'
+import type {
+  DownloadRequest,
+  DownloadResponse,
+  LocalAiPrepareResponse,
+  TaskStatus,
+  VideoInfo,
+} from '@shared/contracts'
 
 const localResolverBase =
   (import.meta.env.VITE_LOCAL_RESOLVER_BASE_URL as string | undefined)?.trim() ||
@@ -44,6 +50,9 @@ export const localResolverClient = {
   },
   getInfo(payload: { url: string }) {
     return send<VideoInfo, { url: string }>('/info', 'POST', payload)
+  },
+  prepareAIAnalyze(payload: { url: string }) {
+    return send<LocalAiPrepareResponse, { url: string }>('/analyze/prepare', 'POST', payload)
   },
   createDownload(payload: DownloadRequest) {
     return send<DownloadResponse, DownloadRequest>('/download', 'POST', payload)

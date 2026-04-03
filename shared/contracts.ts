@@ -43,6 +43,13 @@ export type AnalyzeRequest = {
   url: string
 }
 
+export type LocalAnalyzeRequest = {
+  video_title: string
+  transcript: TranscriptSegment[]
+  transcript_language?: string
+  source_url?: string
+}
+
 export type TranscriptSegment = {
   start: number
   end: number
@@ -85,6 +92,13 @@ export type ChatCitation = {
 export type VideoChatResponse = {
   answer: string
   citations: ChatCitation[]
+}
+
+export type LocalAiPrepareResponse = {
+  source_url: string
+  video_title: string
+  transcript: TranscriptSegment[]
+  transcript_language?: string
 }
 
 export type VideoFormat = {

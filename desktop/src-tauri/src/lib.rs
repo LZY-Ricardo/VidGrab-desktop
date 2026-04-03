@@ -42,6 +42,32 @@ fn resolver_dev_workdir(cwd: PathBuf) -> PathBuf {
     cwd.join("..").join("resolver")
 }
 
+fn resolver_dev_workdir_from_src_tauri(cwd: PathBuf) -> PathBuf {
+    cwd.join("..").join("..").join("resolver")
+}
+
+fn resolver_embedded_workdir(cwd: PathBuf) -> PathBuf {
+    cwd.join("target").join("debug").join("_up_").join("_up_").join("resolver")
+}
+
+fn is_resolver_workdir(path: &PathBuf) -> bool {
+    path.join("server.py").exists()
+}
+
+fn resolve_resolver_workdir(resource_dir: Option<PathBuf>, cwd: PathBuf) -> Option<PathBuf> {
+    let candidates = [
+        resource_dir,
+        Some(resolver_embedded_workdir(cwd.clone())),
+        Some(resolver_dev_workdir(cwd.clone())),
+        Some(resolver_dev_workdir_from_src_tauri(cwd)),
+    ];
+
+    candidates
+        .into_iter()
+        .flatten()
+        .find(is_resolver_workdir)
+}
+
 fn build_runtime_paths(
     workdir: PathBuf,
     app_config_dir: PathBuf,
@@ -70,12 +96,10 @@ fn runtime_paths(app: &AppHandle) -> Result<ResolverRuntimePaths, String> {
         .path()
         .resolve("resolver", tauri::path::BaseDirectory::Resource)
         .map_err(|error| error.to_string())?;
-    let workdir = if resource_dir.exists() {
-        resource_dir
-    } else {
-        let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-        resolver_dev_workdir(cwd)
-    };
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    let workdir = resolve_resolver_workdir(Some(resource_dir), cwd).ok_or_else(|| {
+        "未找到可用的 resolver 目录，请确认资源中包含 server.py".to_string()
+    })?;
 
     let config_dir = app.path().app_config_dir().map_err(|error| error.to_string())?;
     let log_dir = app.path().app_log_dir().map_err(|error| error.to_string())?;
@@ -142,6 +166,23 @@ fn wait_for_resolver_health(
     false
 }
 
+fn should_attempt_auto_start(running: bool, service_ready: bool) -> bool {
+    !running && !service_ready
+}
+
+fn infer_resolver_message(running: bool, service_ready: bool) -> String {
+    if running && service_ready {
+        return "Tauri 宿主已托管 resolver，健康检查通过".to_string();
+    }
+    if running {
+        return "Tauri 宿主已托管 resolver，等待健康检查".to_string();
+    }
+    if service_ready {
+        return "检测到本地 resolver 服务已就绪".to_string();
+    }
+    "当前未运行 resolver，可由 Tauri 宿主启动".to_string()
+}
+
 fn build_resolver_command(app: &AppHandle) -> Result<Command, String> {
     let paths = runtime_paths(app)?;
     let mut command = if cfg!(target_os = "windows") {
@@ -175,9 +216,9 @@ fn build_resolver_command(app: &AppHandle) -> Result<Command, String> {
 }
 
 fn current_resolver_status(
-    state: &State<ResolverState>,
+    state: &ResolverState,
     paths: Option<&ResolverRuntimePaths>,
-    message: String,
+    message: Option<String>,
 ) -> ResolverStatus {
     let mut guard = state.child.lock().expect("resolver state lock poisoned");
     let mut running = false;
@@ -198,11 +239,8 @@ fn current_resolver_status(
         }
     }
 
-    let service_ready = if running {
-        probe_resolver_health(RESOLVER_HEALTH_ADDR, std::time::Duration::from_millis(300))
-    } else {
-        false
-    };
+    let service_ready =
+        probe_resolver_health(RESOLVER_HEALTH_ADDR, std::time::Duration::from_millis(300));
 
     ResolverStatus {
         supported: true,
@@ -210,7 +248,7 @@ fn current_resolver_status(
         service_ready,
         mode: "tauri".to_string(),
         pid,
-        message,
+        message: message.unwrap_or_else(|| infer_resolver_message(running, service_ready)),
         workdir: paths.map(|item| item.workdir.display().to_string()),
         config_dir: paths.map(|item| item.config_dir.display().to_string()),
         log_file: paths.map(|item| item.log_file.display().to_string()),
@@ -220,15 +258,76 @@ fn current_resolver_status(
 #[tauri::command]
 fn resolver_status(app: AppHandle, state: State<ResolverState>) -> ResolverStatus {
     let paths = runtime_paths(&app).ok();
-    let message = {
-        let guard = state.child.lock().expect("resolver state lock poisoned");
-        if guard.is_some() {
-            "Tauri 宿主已托管 resolver 进程".to_string()
+    current_resolver_status(state.inner(), paths.as_ref(), None)
+}
+
+fn start_resolver_internal(
+    app: &AppHandle,
+    state: &ResolverState,
+    launch_reason: &str,
+) -> Result<ResolverStatus, String> {
+    let current_paths = runtime_paths(app)?;
+    let current = current_resolver_status(state, Some(&current_paths), None);
+    if current.running {
+        return Ok(current_resolver_status(
+            state,
+            Some(&current_paths),
+            Some("resolver 已在运行中".to_string()),
+        ));
+    }
+    if current.service_ready {
+        return Ok(current_resolver_status(
+            state,
+            Some(&current_paths),
+            Some("检测到本地 resolver 服务已就绪，无需重复启动".to_string()),
+        ));
+    }
+
+    let paths = current_paths;
+    log_host_event(
+        &paths.log_file,
+        &format!(
+            "starting resolver ({launch_reason}), workdir={}, config_dir={}",
+            paths.workdir.display(),
+            paths.config_dir.display()
+        ),
+    )?;
+    let mut command = build_resolver_command(app)?;
+    let child = command
+        .spawn()
+        .map_err(|error| format!("启动 resolver 失败: {error}"))?;
+    let pid = child.id();
+    let mut guard = state
+        .child
+        .lock()
+        .map_err(|_| "resolver state lock failed".to_string())?;
+    *guard = Some(child);
+
+    let ready = wait_for_resolver_health(
+        RESOLVER_HEALTH_ADDR,
+        20,
+        std::time::Duration::from_millis(200),
+        std::time::Duration::from_millis(300),
+    );
+    log_host_event(
+        &paths.log_file,
+        &format!("resolver started ({launch_reason}), pid={pid}"),
+    )?;
+    if !ready {
+        log_host_event(
+            &paths.log_file,
+            "resolver process started but health endpoint did not become ready in time",
+        )?;
+    }
+    Ok(current_resolver_status(
+        state,
+        Some(&paths),
+        Some(if ready {
+            "resolver 已由 Tauri 宿主启动，健康检查通过".to_string()
         } else {
-            "当前未运行 resolver，可由 Tauri 宿主启动".to_string()
-        }
-    };
-    current_resolver_status(&state, paths.as_ref(), message)
+            "resolver 进程已启动，但健康检查未及时通过".to_string()
+        }),
+    ))
 }
 
 #[tauri::command]
@@ -246,56 +345,15 @@ fn start_resolver(app: AppHandle, state: State<ResolverState>) -> Result<Resolve
                 .is_none()
             {
                 return Ok(current_resolver_status(
-                    &state,
+                    state.inner(),
                     Some(&paths),
-                    "resolver 已在运行中".to_string(),
+                    Some("resolver 已在运行中".to_string()),
                 ));
             }
             *guard = None;
         }
     }
-
-    log_host_event(
-        &paths.log_file,
-        &format!(
-            "starting resolver, workdir={}, config_dir={}",
-            paths.workdir.display(),
-            paths.config_dir.display()
-        ),
-    )?;
-    let mut command = build_resolver_command(&app)?;
-    let child = command
-        .spawn()
-        .map_err(|error| format!("启动 resolver 失败: {error}"))?;
-    let pid = child.id();
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|_| "resolver state lock failed".to_string())?;
-    *guard = Some(child);
-
-    let ready = wait_for_resolver_health(
-        RESOLVER_HEALTH_ADDR,
-        20,
-        std::time::Duration::from_millis(200),
-        std::time::Duration::from_millis(300),
-    );
-    log_host_event(&paths.log_file, &format!("resolver started, pid={pid}"))?;
-    if !ready {
-        log_host_event(
-            &paths.log_file,
-            "resolver process started but health endpoint did not become ready in time",
-        )?;
-    }
-    Ok(current_resolver_status(
-        &state,
-        Some(&paths),
-        if ready {
-            "resolver 已由 Tauri 宿主启动，健康检查通过".to_string()
-        } else {
-            "resolver 进程已启动，但健康检查未及时通过".to_string()
-        },
-    ))
+    start_resolver_internal(&app, state.inner(), "manual")
 }
 
 #[tauri::command]
@@ -313,16 +371,16 @@ fn stop_resolver(app: AppHandle, state: State<ResolverState>) -> Result<Resolver
         *guard = None;
         log_host_event(&paths.log_file, &format!("resolver stopped, pid={pid}"))?;
         return Ok(current_resolver_status(
-            &state,
+            state.inner(),
             Some(&paths),
-            "resolver 已停止".to_string(),
+            Some("resolver 已停止".to_string()),
         ));
     }
 
     Ok(current_resolver_status(
-        &state,
+        state.inner(),
         Some(&paths),
-        "当前没有 resolver 进程需要停止".to_string(),
+        Some("当前没有 resolver 进程需要停止".to_string()),
     ))
 }
 
@@ -330,6 +388,21 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .manage(ResolverState::default())
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = app_handle.state::<ResolverState>();
+                let paths = match runtime_paths(&app_handle) {
+                    Ok(paths) => paths,
+                    Err(_) => return,
+                };
+                let current = current_resolver_status(state.inner(), Some(&paths), None);
+                if should_attempt_auto_start(current.running, current.service_ready) {
+                    let _ = start_resolver_internal(&app_handle, state.inner(), "startup");
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             resolver_status,
             start_resolver,
@@ -341,8 +414,13 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_runtime_paths, probe_resolver_health, resolver_dev_workdir};
+    use super::{
+        build_runtime_paths, infer_resolver_message, is_resolver_workdir,
+        probe_resolver_health, resolve_resolver_workdir, resolver_dev_workdir,
+        resolver_dev_workdir_from_src_tauri, resolver_embedded_workdir, should_attempt_auto_start,
+    };
     use std::{
+        fs,
         io::{Read, Write},
         net::TcpListener,
         path::PathBuf,
@@ -356,6 +434,25 @@ mod tests {
         let actual = resolver_dev_workdir(cwd);
 
         assert_eq!(actual, PathBuf::from("F:/myProjects/VidGrab/desktop/../resolver"));
+    }
+
+    #[test]
+    fn builds_dev_resolver_path_from_src_tauri_cwd() {
+        let cwd = PathBuf::from("F:/myProjects/VidGrab/desktop/src-tauri");
+        let actual = resolver_dev_workdir_from_src_tauri(cwd);
+
+        assert_eq!(actual, PathBuf::from("F:/myProjects/VidGrab/desktop/src-tauri/../../resolver"));
+    }
+
+    #[test]
+    fn builds_embedded_resolver_path_from_project_root() {
+        let cwd = PathBuf::from("F:/myProjects/VidGrab/desktop/src-tauri");
+        let actual = resolver_embedded_workdir(cwd);
+
+        assert_eq!(
+            actual,
+            PathBuf::from("F:/myProjects/VidGrab/desktop/src-tauri/target/debug/_up_/_up_/resolver")
+        );
     }
 
     #[test]
@@ -401,5 +498,41 @@ mod tests {
             &addr.to_string(),
             Duration::from_millis(500)
         ));
+    }
+
+    #[test]
+    fn resolves_first_candidate_that_contains_server_file() {
+        let base = std::env::temp_dir().join(format!(
+            "vidgrab-resolver-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("duration")
+                .as_nanos()
+        ));
+        let resource = base.join("resource-resolver");
+        let embedded = base.join("target").join("debug").join("_up_").join("_up_").join("resolver");
+        fs::create_dir_all(&embedded).expect("create embedded resolver dir");
+        fs::write(embedded.join("server.py"), "print('ok')").expect("write server.py");
+
+        let resolved = resolve_resolver_workdir(Some(resource), base.clone());
+        assert_eq!(resolved, Some(embedded.clone()));
+        assert!(is_resolver_workdir(&embedded));
+
+        fs::remove_dir_all(base).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn auto_start_is_only_needed_when_service_is_not_ready() {
+        assert!(should_attempt_auto_start(false, false));
+        assert!(!should_attempt_auto_start(true, false));
+        assert!(!should_attempt_auto_start(false, true));
+    }
+
+    #[test]
+    fn infers_external_service_message_when_health_check_is_ready() {
+        assert_eq!(
+            infer_resolver_message(false, true),
+            "检测到本地 resolver 服务已就绪"
+        );
     }
 }

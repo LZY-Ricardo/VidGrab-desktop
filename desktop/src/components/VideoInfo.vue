@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import type { VideoInfo } from '@/types'
 
@@ -7,7 +7,16 @@ const props = defineProps<{
   info: VideoInfo
 }>()
 
+const panelRef = ref<HTMLElement | null>(null)
+const compactLayout = ref(false)
 const thumbnailUrl = computed(() => props.info.thumbnail_proxy_url || props.info.thumbnail || null)
+
+let resizeObserver: ResizeObserver | null = null
+
+function syncLayoutMode() {
+  const width = panelRef.value?.clientWidth ?? 0
+  compactLayout.value = width > 0 && width <= 860
+}
 
 function getPlatformIcon(platform?: string) {
   const normalized = (platform || '').toLowerCase()
@@ -42,10 +51,25 @@ function formatViews(value?: number) {
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
   return `${value}`
 }
+
+onMounted(() => {
+  syncLayoutMode()
+  if (typeof ResizeObserver === 'undefined' || !panelRef.value) return
+
+  resizeObserver = new ResizeObserver(() => {
+    syncLayoutMode()
+  })
+  resizeObserver.observe(panelRef.value)
+})
+
+onUnmounted(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
 </script>
 
 <template>
-  <section class="panel video-panel">
+  <section ref="panelRef" class="panel video-panel" :class="{ compact: compactLayout }">
     <div class="media-wrap">
       <div class="media">
         <img v-if="thumbnailUrl" :src="thumbnailUrl" :alt="info.title" />
@@ -84,22 +108,21 @@ function formatViews(value?: number) {
         <span>{{ info.formats.length }} formats</span>
       </div>
 
-      <p v-if="info.note" class="note">{{ info.note }}</p>
       <p v-if="info.error" class="warning">{{ info.error }}</p>
 
-      <div class="summary-grid">
-        <div class="summary-card">
+      <div class="summary-strip">
+        <span class="summary-pill">
           <span class="summary-label">平台</span>
           <strong>{{ info.platform || '未知' }}</strong>
-        </div>
-        <div class="summary-card">
+        </span>
+        <span class="summary-pill">
           <span class="summary-label">时长</span>
           <strong>{{ formatDuration(info.duration) }}</strong>
-        </div>
-        <div class="summary-card">
-          <span class="summary-label">可选格式</span>
+        </span>
+        <span class="summary-pill">
+          <span class="summary-label">格式</span>
           <strong>{{ info.formats.length }}</strong>
-        </div>
+        </span>
       </div>
     </div>
   </section>
@@ -188,13 +211,15 @@ function formatViews(value?: number) {
 }
 
 .title-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 14px;
+  min-width: 0;
 }
 
 .title-block {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -204,7 +229,8 @@ function formatViews(value?: number) {
   line-height: 1.4;
   font-weight: 700;
   color: #0f172a;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .badge {
@@ -218,6 +244,8 @@ function formatViews(value?: number) {
   text-transform: capitalize;
   white-space: nowrap;
   border: 1px solid transparent;
+  flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .badge-icon {
@@ -225,7 +253,6 @@ function formatViews(value?: number) {
 }
 
 .meta,
-.note,
 .warning {
   margin: 0;
   line-height: 1.6;
@@ -252,34 +279,29 @@ function formatViews(value?: number) {
   border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
-.note {
-  color: #2563eb;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
 .warning {
   color: #b45309;
   font-size: 14px;
   line-height: 1.7;
 }
 
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.summary-strip {
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
-.summary-card {
-  padding: 14px 14px 13px;
-  border-radius: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.95));
+.summary-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.96));
 }
 
-.summary-card strong {
-  display: block;
-  margin-top: 6px;
+.summary-pill strong {
   color: #0f172a;
   font-size: 15px;
 }
@@ -321,17 +343,33 @@ function formatViews(value?: number) {
   border-color: rgba(96, 165, 250, 0.22);
 }
 
-@media (max-width: 840px) {
+.video-panel.compact {
+  grid-template-columns: 1fr;
+}
+
+.video-panel.compact .title-row {
+  grid-template-columns: 1fr;
+}
+
+.video-panel.compact .badge {
+  justify-self: start;
+}
+
+.video-panel.compact .summary-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 860px) {
   .video-panel {
     grid-template-columns: 1fr;
   }
 
   .title-row {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
-  .summary-grid {
-    grid-template-columns: 1fr;
+  .summary-strip {
+    gap: 10px;
   }
 }
 </style>

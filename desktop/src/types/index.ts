@@ -4,6 +4,8 @@ export type {
   CurrentUserResponse,
   DownloadRequest,
   DownloadResponse,
+  LocalAiPrepareResponse,
+  LocalAnalyzeRequest,
   LoginRequest,
   LoginResponse,
   MembershipStatus,

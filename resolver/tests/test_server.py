@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -70,6 +71,45 @@ class ResolverApiTests(unittest.TestCase):
         self.assertIn(task_id, server.TASKS)
         self.assertEqual(server.TASKS[task_id].status, "processing")
         submit_mock.assert_called_once()
+
+    @patch("server._transcribe_local_video_with_whisper")
+    @patch("server._find_local_video_file")
+    @patch("server._pick_subtitle_track")
+    @patch("server._extract_with_fallback")
+    def test_analyze_prepare_falls_back_to_local_asr_when_no_subtitle(
+        self,
+        extract_mock,
+        subtitle_mock,
+        find_local_file_mock,
+        transcribe_mock,
+    ) -> None:
+        extract_mock.return_value = (
+            {
+                "title": "Example Video",
+                "duration": 123.4,
+                "extractor_key": "BiliBili",
+            },
+            "chrome",
+        )
+        subtitle_mock.return_value = (None, None)
+        find_local_file_mock.return_value = Path("F:/tmp/example.mp4")
+        transcribe_mock.return_value = [
+            {
+                "start": 0.0,
+                "end": 3.0,
+                "timestamp": "00:00:00",
+                "text": "第一句转写",
+            }
+        ]
+
+        response = self.client.post("/api/analyze/prepare", json={"url": "https://example.com/video"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["video_title"], "Example Video")
+        self.assertEqual(payload["transcript_language"], "zh-ASR")
+        self.assertEqual(len(payload["transcript"]), 1)
+        transcribe_mock.assert_called_once()
 
 
 if __name__ == "__main__":
