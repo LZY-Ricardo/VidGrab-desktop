@@ -24,7 +24,6 @@ const {
   loading,
   openDownloadedFile,
   progress,
-  resolverHealthy,
   speed,
   startDownload,
   status,
@@ -35,12 +34,6 @@ const {
 const emit = defineEmits<{
   urlChange: [value: string]
 }>()
-
-const heroStatus = computed(() => {
-  if (resolverHealthy.value === true) return '本地解析服务已连接'
-  if (resolverHealthy.value === false) return '本地解析服务未启动'
-  return '等待检测本地解析服务'
-})
 
 const hasVideoInfo = computed(() => Boolean(videoInfo.value) && status.value !== 'fetching')
 
@@ -54,23 +47,15 @@ watch(
 </script>
 
 <template>
-  <div class="download-shell max-w-7xl mx-auto px-4 sm:px-6" :class="hasVideoInfo ? 'py-4 sm:py-5' : 'py-8 sm:py-12'">
+  <div class="download-shell max-w-7xl mx-auto px-4 sm:px-6" :class="hasVideoInfo ? 'py-4 sm:py-5' : 'py-6 sm:py-8'">
     <div :class="hasVideoInfo ? 'max-w-7xl mx-auto' : 'max-w-3xl mx-auto'">
       <div v-if="!hasVideoInfo" class="text-center mb-7 sm:mb-8">
-        <div class="hero-status-badge">
-          {{ heroStatus }}
-        </div>
         <h1 class="hero-title text-2xl sm:text-4xl font-bold text-gray-900 mb-2">
           万能视频下载器
         </h1>
         <p class="hero-subtitle text-gray-500 text-xs sm:text-base">
           支持 YouTube、Bilibili、TikTok 等 100+ 平台
         </p>
-        <div class="hero-value-row">
-          <span class="hero-value-chip">免费视频下载</span>
-          <span class="hero-value-chip">AI 总结</span>
-          <span class="hero-value-chip">字幕导出</span>
-        </div>
       </div>
 
       <div :class="hasVideoInfo ? 'mb-3' : 'mb-6'">
@@ -150,7 +135,7 @@ watch(
       </div>
     </div>
 
-    <div v-if="!hasVideoInfo" class="mt-12 sm:mt-16 text-center max-w-3xl mx-auto">
+    <div v-if="!hasVideoInfo" class="mt-10 sm:mt-12 text-center max-w-3xl mx-auto">
       <h3 class="text-sm font-medium text-gray-500 mb-5 uppercase tracking-wide">支持平台</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div class="platform-mini-card vg-card-soft px-5 py-3 rounded-lg">
@@ -186,37 +171,6 @@ input::placeholder {
 
 .hero-subtitle {
   line-height: 1.6;
-}
-
-.hero-value-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.hero-value-chip {
-  padding: 0.34rem 0.72rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(191, 219, 254, 0.88);
-  color: #1d4ed8;
-  font-size: 0.74rem;
-  font-weight: 700;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08);
-}
-
-.hero-status-badge {
-  display: inline-flex;
-  margin-bottom: 1rem;
-  padding: 0.45rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(239, 246, 255, 0.88);
-  border: 1px solid rgba(147, 197, 253, 0.44);
-  color: #1d4ed8;
-  font-size: 0.76rem;
-  font-weight: 700;
 }
 
 .hero-helper {

@@ -32,8 +32,8 @@ const {
 const paymentClosedNotice = '支付服务暂未开放，敬请期待'
 const accountDrawerOpen = ref(false)
 const diagnosticsDrawerOpen = ref(false)
+const accountDrawerMode = ref<'login' | 'register'>('login')
 
-const notice = computed(() => authError.value || membershipError.value || null)
 const authActionLabel = computed(() => {
   if (authenticated.value && currentUser.value) return currentUser.value.email
   return '账号中心'
@@ -50,6 +50,19 @@ async function syncSession() {
   } else {
     clearMembership()
   }
+}
+
+function resetInitialViewport() {
+  if (typeof window === 'undefined') return
+  if ('scrollRestoration' in window.history) {
+    window.history.scrollRestoration = 'manual'
+  }
+  if (window.location.hash) {
+    window.history.replaceState({}, '', window.location.pathname + window.location.search)
+  }
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  })
 }
 
 async function handleLogin(payload: { email: string; password: string }) {
@@ -80,6 +93,7 @@ function scrollToSection(id: string) {
 }
 
 function handleTopAction() {
+  accountDrawerMode.value = 'login'
   accountDrawerOpen.value = true
 }
 
@@ -91,12 +105,18 @@ function openDiagnosticsDrawer() {
   diagnosticsDrawerOpen.value = true
 }
 
+function openAuthDrawer(mode: 'login' | 'register') {
+  accountDrawerMode.value = mode
+  accountDrawerOpen.value = true
+}
+
 function closeDrawers() {
   accountDrawerOpen.value = false
   diagnosticsDrawerOpen.value = false
 }
 
 onMounted(async () => {
+  resetInitialViewport()
   await syncSession()
 })
 </script>
@@ -126,27 +146,30 @@ onMounted(async () => {
         </div>
 
         <div class="nav-actions flex items-center gap-3">
-          <button class="nav-link" type="button" @click="openDiagnosticsDrawer">
-            设置
-          </button>
-          <button class="nav-link" type="button" @click="handleTopAction">
-            {{ authActionLabel }}
-          </button>
-          <button class="vg-btn-soft flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm" type="button" @click="handleStartCheckout">
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-            开通 VIP
-          </button>
+          <template v-if="authenticated">
+            <button class="nav-link" type="button" @click="handleTopAction">
+              {{ authActionLabel }}
+            </button>
+            <button class="vg-btn-soft flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm" type="button" @click="handleStartCheckout">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              敬请期待
+            </button>
+          </template>
+          <template v-else>
+            <button class="nav-link" type="button" @click="openAuthDrawer('login')">登录</button>
+            <button class="nav-link" type="button" @click="openAuthDrawer('register')">注册</button>
+            <button class="vg-btn-soft flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm" type="button" @click="handleStartCheckout">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              敬请期待
+            </button>
+          </template>
         </div>
       </div>
     </nav>
-
-    <div v-if="notice" class="notice-bar border-b border-blue-100/70 bg-blue-50/80">
-      <div class="max-w-6xl mx-auto px-6 py-3 text-sm text-blue-700">
-        {{ notice }}
-      </div>
-    </div>
 
     <main class="main-stage relative flex-1">
       <DownloadForm
@@ -189,7 +212,7 @@ onMounted(async () => {
               </svg>
             </div>
             <h3 class="text-base font-semibold text-gray-900 mb-2">安全可靠</h3>
-            <p class="text-sm text-gray-600 leading-6">解析和下载在你本机执行，桌面端只同步账号、会员和 AI 鉴权，不再依赖云端机房出口解析。</p>
+            <p class="text-sm text-gray-600 leading-6">文件下载后服务器立即清理，不留存任何用户数据，邮箱验证保障账号与安全。</p>
           </div>
         </div>
       </div>
@@ -217,7 +240,7 @@ onMounted(async () => {
       <div class="max-w-4xl mx-auto px-6 py-14 md:py-16">
         <div class="text-center mb-10">
           <h2 class="section-title text-2xl font-bold text-gray-900">套餐价格</h2>
-          <p class="pricing-subtitle text-sm text-gray-500 mt-2">下载功能永久免费，AI 学习助手后续将按会员权益开放</p>
+          <p class="pricing-subtitle text-sm text-gray-500 mt-2">下载功能永久免费，AI 学习助手开通 VIP 后无限使用</p>
         </div>
 
         <div class="pricing-grid grid md:grid-cols-2 gap-6">
@@ -234,14 +257,14 @@ onMounted(async () => {
               <li class="plan-item">视频下载（无限次）</li>
               <li class="plan-item">支持 100+ 平台（YouTube / Bilibili / TikTok 等）</li>
               <li class="plan-item">多格式 / 多清晰度选择</li>
-              <li class="plan-item muted">AI 视频总结（按会员状态控制）</li>
+              <li class="plan-item muted">AI 视频总结（每日限 2 次）</li>
               <li class="plan-item muted">字幕导出（SRT / VTT / TXT）</li>
               <li class="plan-item muted">思维导图浏览与导出</li>
               <li class="plan-item muted">AI 流式问答</li>
             </ul>
             <div class="mt-6">
-              <button class="plan-btn-secondary w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors" type="button" @click="handleTopAction">
-                前往账号中心
+              <button class="plan-btn-secondary w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-medium text-gray-700 transition-colors" type="button" @click="openAuthDrawer('register')">
+                免费注册
               </button>
             </div>
           </div>
@@ -251,7 +274,8 @@ onMounted(async () => {
             <div class="mb-4">
               <span class="text-xs font-semibold tracking-wide text-blue-600 uppercase">VIP 会员</span>
               <div class="plan-price-row mt-2 flex items-end gap-1">
-                <span class="plan-price-main text-3xl font-bold text-gray-900">待开放</span>
+                <span class="plan-price-main text-3xl font-bold text-gray-900">¥19.9</span>
+                <span class="text-sm text-gray-500 mb-1">/ 30天</span>
               </div>
               <div class="value-chips mt-3">
                 <span class="value-chip">不限 AI 总结</span>
@@ -268,7 +292,7 @@ onMounted(async () => {
               <li class="plan-item">优先客服支持</li>
             </ul>
             <div class="mt-6">
-              <button class="plan-btn-primary w-full rounded-lg py-2.5 text-sm font-medium text-white transition-colors" type="button" @click="handleTopAction">
+              <button class="plan-btn-primary w-full rounded-lg py-2.5 text-sm font-medium text-white transition-colors" type="button" @click="handleStartCheckout">
                 {{ paymentClosedNotice }}
               </button>
               <p class="plan-note mt-2 text-center text-xs text-blue-700/80">
@@ -295,21 +319,15 @@ onMounted(async () => {
               AI 学习助手会输出总览、章节要点、思维导图和流式问答，把长视频转换成更容易复盘的知识结构。
             </p>
           </section>
-          <section class="footer-card rounded-2xl border border-gray-100 bg-gray-50 p-5">
-            <h2 class="footer-title text-base font-semibold text-gray-900 mb-2">桌面端迁移方向</h2>
-            <p class="footer-desc text-sm leading-6 text-gray-600">
-              当前优先保证网页端视觉主体复刻，同时保留桌面专属的本地解析和宿主管理能力，后续再继续打磨细节。
-            </p>
-          </section>
         </div>
         <div class="flex flex-col md:flex-row items-center justify-between gap-4">
           <div class="text-sm text-gray-500">
-            © 2026 VidGrab Desktop. 仅供学习与研究，请遵守当地法律法规
+            © 2026 VidGrab. 仅供学习与研究，请遵守当地法律法规
           </div>
           <div class="flex items-center gap-6 text-sm text-gray-500">
-            <button type="button" class="footer-link" @click="handleTopAction">账号中心</button>
-            <button type="button" class="footer-link" @click="openDiagnosticsDrawer">设置诊断</button>
-            <button type="button" class="footer-link" @click="scrollToSection('pricing')">会员说明</button>
+            <button type="button" class="footer-link" @click="handleTopAction">登录</button>
+            <button type="button" class="footer-link" @click="openAuthDrawer('register')">注册</button>
+            <button type="button" class="footer-link" @click="scrollToSection('pricing')">套餐价格</button>
             <button type="button" class="footer-link" @click="scrollToSection('features')">功能特性</button>
           </div>
         </div>
@@ -336,6 +354,7 @@ onMounted(async () => {
             :authenticated="authenticated"
             :current-user="currentUser"
             :membership="membership"
+            :initial-mode="accountDrawerMode"
             :auth-loading="authLoading"
             :auth-submitting="authSubmitting"
             :membership-loading="membershipLoading"
@@ -433,10 +452,6 @@ button {
 
 .nav-link:hover {
   color: #111827;
-}
-
-.notice-bar {
-  backdrop-filter: blur(8px);
 }
 
 .main-stage {

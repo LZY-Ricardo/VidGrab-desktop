@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 
 import type { MembershipStatus, UserProfile } from '@/types'
 
@@ -7,6 +7,7 @@ const props = defineProps<{
   authenticated: boolean
   currentUser: UserProfile | null
   membership: MembershipStatus | null
+  initialMode?: 'login' | 'register'
   authLoading: boolean
   authSubmitting: boolean
   membershipLoading: boolean
@@ -22,7 +23,7 @@ const emit = defineEmits<{
   refreshMembership: []
 }>()
 
-const mode = ref<'login' | 'register'>('login')
+const mode = ref<'login' | 'register'>(props.initialMode || 'login')
 const localError = ref<string | null>(null)
 const showLoginPassword = ref(false)
 const showRegisterPassword = ref(false)
@@ -67,6 +68,16 @@ function switchToLoginWithPrefill() {
   mode.value = 'login'
   localError.value = null
 }
+
+watch(
+  () => props.initialMode,
+  (nextMode) => {
+    if (nextMode) {
+      mode.value = nextMode
+      localError.value = null
+    }
+  },
+)
 </script>
 
 <template>
