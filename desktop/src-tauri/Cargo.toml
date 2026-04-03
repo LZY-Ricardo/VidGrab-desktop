@@ -1,6 +1,6 @@
 [package]
 name = "vidgrab_desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "VidGrab desktop host runtime"
 authors = ["VidGrab"]
 edition = "2021"
