@@ -1,0 +1,14 @@
+{
+  "name": "vidgrab-desktop-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "desktop"
+  ],
+  "scripts": {
+    "dev:hosted": "node scripts/dev-host.mjs",
+    "desktop:dev": "npm --prefix desktop run dev",
+    "desktop:build": "npm --prefix desktop run build",
+    "resolver:test": "cd resolver && py -3 -m unittest discover -s tests -p test_*.py"
+  }
+}

@@ -1,0 +1,31 @@
+# Node
+node_modules/
+dist/
+.vite/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Tauri / desktop build
+src-tauri/target/
+desktop/src-tauri/target/
+*.msi
+*.exe
+
+# Runtime data
+downloads/
+models/
+image_cache/
+app.db
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local temp logs
+.tmp/
