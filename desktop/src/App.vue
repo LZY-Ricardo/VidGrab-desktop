@@ -66,26 +66,39 @@ function resetInitialViewport() {
 }
 
 async function handleLogin(payload: { email: string; password: string }) {
-  await login(payload)
   try {
-    await fetchMembership()
+    await login(payload)
   } catch {
-    // ignore membership sync failure here
+    return
   }
+
+  await syncSession()
 }
 
 async function handleRegister(payload: { email: string; password: string }) {
-  await register(payload)
+  try {
+    await register(payload)
+  } catch {
+    // 具体报错已在 useAuth 中写入 error 状态，这里吞掉未处理 Promise，避免 Vue 警告污染控制台
+  }
 }
 
 async function handleLogout() {
-  await logout()
+  try {
+    await logout()
+  } catch {
+    return
+  }
   clearMembership()
 }
 
 async function handleRefreshMembership() {
   if (!authenticated.value) return
-  await fetchMembership()
+  try {
+    await fetchMembership()
+  } catch {
+    // 交给 membershipError 展示
+  }
 }
 
 function scrollToSection(id: string) {

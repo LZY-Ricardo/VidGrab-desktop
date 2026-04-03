@@ -10,50 +10,72 @@ import type {
   VideoChatResponse,
 } from '@/types'
 
-declare global {
-  interface Window {
-    __TAURI__?: unknown
-  }
-}
-
 const cloudApiBase =
   (import.meta.env.VITE_CLOUD_API_BASE_URL as string | undefined)?.trim() ||
   'https://api.vidgrab.sunandyu.top/api'
 
 const ACCESS_TOKEN_KEY = 'vidgrab.desktop.access-token'
+let accessTokenCache: string | null = readPersistedAccessToken()
+
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+function readPersistedAccessToken() {
+  try {
+    return window.localStorage.getItem(ACCESS_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
 
 function getAccessToken() {
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY)
+  if (accessTokenCache) {
+    return accessTokenCache
+  }
+
+  accessTokenCache = readPersistedAccessToken()
+  return accessTokenCache
 }
 
 export function setAccessToken(token: string | null) {
+  accessTokenCache = token
+
   if (token) {
-    window.localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    try {
+      window.localStorage.setItem(ACCESS_TOKEN_KEY, token)
+    } catch {
+      // Tauri WebView / 隐私环境下本地持久化失败时，至少保留当前会话内存态。
+    }
     return
   }
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY)
-}
 
-async function resolveFetch() {
-  if (!window.__TAURI__) {
-    return window.fetch.bind(window)
+  try {
+    window.localStorage.removeItem(ACCESS_TOKEN_KEY)
+  } catch {
+    // ignore persistence cleanup errors
   }
-
-  const module = await import('@tauri-apps/plugin-http')
-  return module.fetch
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAccessToken()
   const headers = new Headers(init?.headers || {})
-  headers.set('Content-Type', 'application/json')
+  if (init?.body) {
+    headers.set('Content-Type', 'application/json')
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const tauriFetch = await resolveFetch()
-  const response = await tauriFetch(`${cloudApiBase}${path}`, {
+  const response = await window.fetch(`${cloudApiBase}${path}`, {
     ...init,
+    credentials: 'include',
     headers,
   })
 
@@ -65,7 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       detail = response.statusText || detail
     }
-    throw new Error(detail)
+    throw new ApiError(response.status, detail)
   }
 
   return (await response.json()) as T

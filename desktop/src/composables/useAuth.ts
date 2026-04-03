@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 
-import { cloudClient, setAccessToken } from '@/api/cloudClient'
+import { ApiError, cloudClient, setAccessToken } from '@/api/cloudClient'
 import type { RegisterRequest, RegisterResponse, UserProfile } from '@/types'
 
 const currentUser = ref<UserProfile | null>(null)
@@ -19,10 +19,19 @@ export function useAuth() {
     try {
       const response = await cloudClient.getCurrentUser()
       currentUser.value = response.authenticated ? response.user || null : null
+      error.value = null
       return currentUser.value
     } catch (requestError) {
       currentUser.value = null
-      error.value = requestError instanceof Error ? requestError.message : '获取登录状态失败'
+      const message = requestError instanceof Error ? requestError.message : '获取登录状态失败'
+
+      // 应用启动时探测登录态，未登录本身不是错误，不应在界面上残留“请先登录”提示。
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        error.value = null
+        return null
+      }
+
+      error.value = message
       return null
     } finally {
       loading.value = false
@@ -51,10 +60,13 @@ export function useAuth() {
   async function login(payload: { email: string; password: string }) {
     submitting.value = true
     error.value = null
+    registerMessage.value = null
+    debugVerifyUrl.value = null
     try {
       const response = await cloudClient.login(payload)
       setAccessToken(response.access_token)
       currentUser.value = response.user
+      error.value = null
       return response.user
     } catch (requestError) {
       setAccessToken(null)

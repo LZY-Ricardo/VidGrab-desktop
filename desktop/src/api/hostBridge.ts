@@ -17,10 +17,10 @@ declare global {
 }
 
 async function getInvoke() {
-  if (!window.__TAURI__) {
+  const module = await import('@tauri-apps/api/core')
+  if (!module.isTauri()) {
     return null
   }
-  const module = await import('@tauri-apps/api/core')
   return module.invoke
 }
 
