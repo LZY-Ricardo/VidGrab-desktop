@@ -2,6 +2,12 @@
 
 VidGrab Desktop is the desktop-first evolution of the existing VidGrab web product.
 
+## Download
+
+- Latest release: https://github.com/LZY-Ricardo/VidGrab-desktop/releases/tag/v0.1.1
+- Windows setup: `VidGrab.Desktop_0.1.1_x64-setup.exe`
+- Windows MSI: `VidGrab.Desktop_0.1.1_x64_en-US.msi`
+
 This repository is intentionally split into:
 
 - `desktop/`: Tauri + Vue desktop shell
